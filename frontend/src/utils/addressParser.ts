@@ -1,5 +1,3 @@
-import { DEMO_PARSED_DATASET } from '../data/demoDataset';
-import { REFERENCE_DICTIONARY } from '../data/referenceDictionary';
 import {
   AddressRecordUI,
   BatchParseMetrics,
@@ -132,21 +130,11 @@ export function validateAddressRecord(
 
 /**
  * Встроенный детерминированный парсер и модуль гео-обогащения для автономного режима
- * (работает мгновенно в браузере, если бэкенд POST /api/parse недоступен).
+ * (используется как резервный клиентский парсер, если сервер POST /api/parse недоступен).
+ * Никакого сопоставления по полным входным строкам или id не используется.
  */
 export function parseRawAddressLocal(item: RawAddressItem): ParsedAddressItem {
   const raw = item.raw_address;
-  const exactDemoMatch = DEMO_PARSED_DATASET.find(
-    (d) => d.raw_address.trim().toLowerCase() === raw.trim().toLowerCase()
-  );
-
-  if (exactDemoMatch) {
-    return toStrictExportItem({
-      ...exactDemoMatch,
-      id: item.id,
-      raw_address: item.raw_address,
-    });
-  }
 
   let province: string | null = null;
   let city: string | null = null;
@@ -160,153 +148,187 @@ export function parseRawAddressLocal(item: RawAddressItem): ParsedAddressItem {
   let floor: string | null = null;
   let landmark: string | null = null;
 
-  // 1. Определение города из текста (без служебных слов "город", "пос." и дубля через слэш)
+  // 1. Определение города и области из текста (включая области КАТО 2026 и казахские маркеры)
+  const provincePatterns: Array<{ regex: RegExp; province: string }> = [
+    { regex: /(?:область\s+абай(?:ская)?|абайская\s+область|абай\s+облысы)/i, province: 'Абайская область' },
+    { regex: /(?:область\s+жет[ыі]су(?:ская)?|жет[ыі]суская\s+область|жетісу\s+облысы)/i, province: 'Жетысуская область' },
+    { regex: /(?:область\s+[уұ]лытау(?:ская)?|[уұ]лытауская\s+область|ұлытау\s+облысы)/i, province: 'Улытауская область' },
+    { regex: /(?:область\s+актюбинская|актюбинская\s+область|ақтөбе\s+облысы)/i, province: 'Актюбинская область' },
+    { regex: /(?:область\s+алматинская|алматинская\s+область|алматы\s+облысы)/i, province: 'Алматинская область' },
+    { regex: /(?:область\s+атырауская|атырауская\s+область|атырау\s+облысы)/i, province: 'Атырауская область' },
+    { regex: /(?:область\s+карагандинская|карагандинская\s+область|қарағанды\s+облысы)/i, province: 'Карагандинская область' },
+    { regex: /(?:область\s+мангистауская|мангистауская\s+область|маңғыстау\s+облысы)/i, province: 'Мангистауская область' },
+  ];
+  for (const pp of provincePatterns) {
+    if (pp.regex.test(raw)) {
+      province = pp.province;
+      break;
+    }
+  }
+
   const cityPatterns: Array<{ regex: RegExp; city: string; province: string }> = [
     { regex: /(?:город\s+|г\.?\s*)?алматы(?:\s*\/\s*алматы\s+қаласы|\s+қаласы)?/i, city: 'Алматы', province: 'Алматы' },
     { regex: /(?:город\s+|г\.?\s*)?астана(?:\s*\/\s*астана\s+қаласы|\s+қаласы)?/i, city: 'Астана', province: 'Астана' },
     { regex: /(?:город\s+|г\.?\s*)?шымкент(?:\s*\/\s*шымкент\s+қаласы|\s+қаласы)?/i, city: 'Шымкент', province: 'Шымкент' },
-    { regex: /(?:город\s+|г\.?\s*)?караганда(?:\s+қаласы)?/i, city: 'Караганда', province: 'Карагандинская область' },
-    { regex: /(?:город\s+|г\.?\s*)?актобе(?:\s+қаласы)?/i, city: 'Актобе', province: 'Актюбинская область' },
+    { regex: /(?:город\s+|г\.?\s*)?(?:караганда|қарағанды)(?:\s+қаласы)?/i, city: 'Караганда', province: 'Карагандинская область' },
+    { regex: /(?:город\s+|г\.?\s*)?(?:актобе|ақтөбе)(?:\s*\/\s*ақтөбе\s+қаласы|\s+қаласы)?/i, city: 'Актобе', province: 'Актюбинская область' },
     { regex: /(?:город\s+|г\.?\s*)?атырау(?:\s+қаласы)?/i, city: 'Атырау', province: 'Атырауская область' },
+    { regex: /(?:город\s+|г\.?\s*)?актау(?:\s+қаласы)?/i, city: 'Актау', province: 'Мангистауская область' },
+    { regex: /(?:город\s+|г\.?\s*)?семей(?:\s+қаласы)?/i, city: 'Семей', province: 'Абайская область' },
     { regex: /(?:пос\.?\s+|поселок\s+|п\.?\s*)?боралдай/i, city: 'Боралдай', province: 'Алматинская область' },
   ];
 
   for (const cp of cityPatterns) {
     if (cp.regex.test(raw)) {
       city = cp.city;
-      province = cp.province;
+      if (!province) province = cp.province;
       break;
     }
   }
 
-  // 2. Определение района из текста (без слова "район")
+  // 2. Определение района из текста (без слова "район" и без ложного срабатывания на "шағын ауданы")
   const districtMatch = raw.match(
-    /([А-Яа-яЁёӘәІіҢңҒғҮүҰұҚқӨөҺһ-]+)\s+(?:район|р-н|ауданы)/i
+    /(?<!шағын\s)(?<!ықшам\s)([А-Яа-яЁёӘәІіҢңҒғҮүҰұҚқӨөҺһ-]+)\s+(?:район|р-н|ауданы)/i
   );
-  if (districtMatch) {
+  if (
+    districtMatch &&
+    !['шағын', 'ықшам', 'жилой'].includes(districtMatch[1].trim().toLowerCase())
+  ) {
     district = districtMatch[1].trim();
   }
 
-  // 3. Детали курьера: подъезд, этаж, квартира (только номер без служебных слов)
+  // 3. Детали курьера: подъезд (RU+KK), этаж (RU+KK), квартира (RU+KK)
   const entranceMatch =
-    raw.match(/(\d+)\s*(?:подъезд|подьезд|п-д)/i) ||
-    raw.match(/(?:подъезд|подьезд|п-д)\s*№?\s*(\d+)/i);
+    raw.match(/(\d+)\s*(?:подъезд|подьезд|п-д|кіреберіс)/i) ||
+    raw.match(/(?:подъезд|подьезд|п-д|кіреберіс)\s*№?\s*(\d+)/i);
   if (entranceMatch) {
     entrance = entranceMatch[1];
   }
 
   const floorMatch =
-    raw.match(/(\d+)\s*(?:этаж|эт\.?)(?:\s|,|$)/i) ||
-    raw.match(/(?:этаж|эт\.?)\s*№?\s*(\d+)/i);
+    raw.match(/(\d+)\s*(?:этаж|эт\.?|қабат)(?:\s|,|$)/i) ||
+    raw.match(/(?:этаж|эт\.?|қабат)\s*№?\s*(\d+)/i);
   if (floorMatch) {
     floor = floorMatch[1];
   }
 
   const aptMatch =
-    raw.match(/(?:кв\.?|квартира|flat)\s*№?\s*(\d+[а-яa-z]?)/i) ||
-    raw.match(/(\d+[а-яa-z]?)\s*(?:кв\.?|квартира|flat)(?:\s|,|$)/i);
+    raw.match(/(?:кв\.?|квартира|пәтер|flat|kv)\s*№?\s*(\d+[а-яa-z]?)/i) ||
+    raw.match(/(\d+[а-яa-z]?)\s*(?:кв\.?|квартира|пәтер|flat|kv)(?:\s|,|$)/i);
   if (aptMatch) {
     apartment = aptMatch[1];
   }
 
-  // 4. Ориентир (landmark)
+  // 4. Ориентир (landmark), включая перекрёстки («уг. ул. ...»)
   const landmarkMatch = raw.match(
-    /((?:магазин|возле|напротив|ЖК|ТЦ|домофон|вход\s+со\s+двора)[^,0-9]*[^\s,])/i
+    /((?:уг\.?\s*(?:ул\.?|пр\.?)?|угол(?:\s+улицы)?|магазин|возле|напротив|ЖК|ТЦ|ТРЦ|БЦ|Qazpost|домофон|вход\s+со\s+двора)\s+[^,]+)/i
   );
   if (landmarkMatch) {
     landmark = landmarkMatch[1]
-      .replace(/\s+\d+\s*(?:подъезд|подьезд|этаж|кв).*$/i, '')
+      .replace(/\s+\d+\s*(?:подъезд|подьезд|кіреберіс|этаж|қабат|кв|пәтер).*$/i, '')
       .trim();
   }
 
-  // 5. Квартал (например, "66квартал 12дом 69квартира")
+  // Рабочая копия без ориентира, чтобы вторая улица перекрёстка («уг. ул. Панфилова») не перезаписывала основную улицу
+  const workWithoutLandmark = landmark ? raw.replace(landmark, ' ') : raw;
+
+  // 5. Развилка: есть И микрорайон/жм, И отдельная улица (например: "пос. Боралдай, мкр Водник, ул Абая 1/2")
+  const mkrAndStreetMatch = workWithoutLandmark.match(
+    /(?:мкр\.?|микрорайон|шағын\s+ауданы|ш\/а|ж\/м|жилмассив)\s+([А-Яа-яЁёӘәІіҢңҒғҮүҰұҚқӨөҺһ0-9-]+)\s*,\s*(?:(ул\.?|улица|пр\.?|проспект|пер\.?|переулок)\s*\.?\s*)([А-Яа-яЁёӘәІіҢңҒғҮүҰұҚқӨөҺһ0-9-]+(?:\s+[А-Яа-яЁёӘәІіҢңҒғҮүҰұҚқӨөҺһ]+)?)/i
+  );
+  if (mkrAndStreetMatch) {
+    living_area = mkrAndStreetMatch[1].trim();
+    const stTypeRaw = mkrAndStreetMatch[2].toLowerCase();
+    street_type = stTypeRaw.startsWith('пр')
+      ? 'проспект'
+      : stTypeRaw.startsWith('пер')
+      ? 'переулок'
+      : 'улица';
+    street_name = mkrAndStreetMatch[3].trim();
+  }
+
+  // 6. Квартал (например, "66квартал 12дом 69квартира")
   const quarterMatch =
-    raw.match(/(\d+)\s*квартал/i) || raw.match(/квартал\s*(\d+)/i);
-  if (quarterMatch) {
+    workWithoutLandmark.match(/(\d+)\s*квартал/i) ||
+    workWithoutLandmark.match(/квартал\s*(\d+)/i);
+  if (quarterMatch && !street_name) {
     street_type = 'квартал';
     street_name = quarterMatch[1];
   }
 
-  // 6. Поиск по справочнику REFERENCE_DICTIONARY для гео-обогащения и точного выделения улицы/мкр
-  const lowerRaw = raw.toLowerCase();
-  for (const ref of REFERENCE_DICTIONARY) {
-    const matchedAlias = ref.aliases.find((alias) => lowerRaw.includes(alias));
-    if (matchedAlias) {
-      if (!city) city = ref.city;
-      if (!province) province = ref.province;
-      if (!district && ref.district) district = ref.district;
-      if (!street_type && ref.street_type) street_type = ref.street_type;
-
-      // Вырезаем название ровно как в исходной строке (без изменения регистра и опечаток)
-      const nameRegex = new RegExp(
-        ref.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
-        'i'
-      );
-      const exactInRaw = raw.match(nameRegex);
-      if (exactInRaw) {
-        street_name = exactInRaw[0];
-      } else {
-        // Проверяем алиасы (например, "казибек би")
-        for (const al of ref.aliases) {
-          const cleanAlias = al
-            .replace(/^(ул\.?\s*|пр\.?\s*|мкр\.?\s*|пер\.?\s*)/i, '')
-            .trim();
-          const aliasRegex = new RegExp(
-            cleanAlias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
-            'i'
-          );
-          const m = raw.match(aliasRegex);
-          if (m && cleanAlias.length > 1) {
-            street_name = m[0];
-            break;
-          }
-        }
-      }
-      break;
+  // 7. Явный тип улицы/микрорайона в строке (RU + KK, прямая и обратная конструкция, числовые мкр)
+  if (!street_name) {
+    const mkrPrefixMatch = workWithoutLandmark.match(
+      /(?:(микрорайон|мкрн\.?|мкр\.?|шағын\s+ауданы|шағын\s+аудан|ш\/а|ықшам\s+ауданы|ы\/а)\s*\.?\s*)([А-Яа-яЁёӘәІіҢңҒғҮүҰұҚқӨөҺһA-Za-z][А-Яа-яЁёӘәІіҢңҒғҮүҰұҚқӨөҺһA-Za-z0-9-]*(?:\s+\d+[а-яa-z]?)?)/i
+    );
+    if (mkrPrefixMatch) {
+      street_type = 'микрорайон';
+      street_name = mkrPrefixMatch[2].trim();
     }
   }
 
-  // 7. Если тип улицы явно указан в строке, уточняем его и имя улицы
   if (!street_name) {
-    const explicitStreetMatch = raw.match(
-      /(?:(ул\.?|улица|пр\.?|проспект|мкр\.?|микрорайон|пер\.?|переулок)\s*\.?\s*)([А-Яа-яЁёA-Za-z0-9-]+(?:\s+[0-9а-яА-Яa-zA-Z]+)?)/i
+    const explicitStreetMatch = workWithoutLandmark.match(
+      /(?:(улица|ул\.?|проспект|пр\.?|переулок|пер\.?|бульвар|б-р)(?=\s|\.)\s*\.?\s*)((?:\d+\s+[А-Яа-яЁёӘәІіҢңҒғҮүҰұҚқӨөҺһA-Za-z-]+)|(?:[А-Яа-яЁёӘәІіҢңҒғҮүҰұҚқӨөҺһA-Za-z][А-Яа-яЁёӘәІіҢңҒғҮүҰұҚқӨөҺһA-Za-z0-9-]*(?:\s+(?:батыра|батыр|хана|хан|би|жырау|ел|дала))?))/i
     );
     if (explicitStreetMatch) {
       const rawType = explicitStreetMatch[1].toLowerCase();
       if (rawType.startsWith('ул')) street_type = 'улица';
       else if (rawType.startsWith('пр')) street_type = 'проспект';
-      else if (rawType.startsWith('мкр') || rawType.startsWith('микр'))
-        street_type = 'микрорайон';
       else if (rawType.startsWith('пер')) street_type = 'переулок';
+      else if (rawType.startsWith('б')) street_type = 'бульвар';
       street_name = explicitStreetMatch[2].trim();
-    } else {
-      // Например: "Нурсити 2 микрорайон" или "Рыбинский переулок"
-      const reverseStreetMatch = raw.match(
-        /([А-Яа-яЁёA-Za-z]+(?:\s+\d+[а-яa-z]?)?)\s+(микрорайон|переулок|проспект|улица)/i
-      );
-      if (reverseStreetMatch) {
-        street_name = reverseStreetMatch[1].trim();
-        street_type = reverseStreetMatch[2].toLowerCase();
-      }
     }
   }
 
-  // 8. Выделение номера дома (сохраняя дроби и литеры: "55/6", "12а", "1/2")
+  if (!street_name) {
+    const reverseStreetMatch = workWithoutLandmark.match(
+      /([А-Яа-яЁёӘәІіҢңҒғҮүҰұҚқӨөҺһA-Za-z][А-Яа-яЁёӘәІіҢңҒғҮүҰұҚқӨөҺһA-Za-z0-9-]*(?:\s+(?:батыра|батыр|хана|хан|би|\d+[а-яa-z]?))?)\s+(микрорайон|шағын\s+ауданы|переулок|проспект|даңғылы|улица|көшесі)/i
+    );
+    if (reverseStreetMatch) {
+      street_name = reverseStreetMatch[1].trim();
+      const rt = reverseStreetMatch[2].toLowerCase();
+      if (rt.includes('микр') || rt.includes('шағын')) street_type = 'микрорайон';
+      else if (rt.includes('пер')) street_type = 'переулок';
+      else if (rt.includes('просп') || rt.includes('даңғылы')) street_type = 'проспект';
+      else street_type = 'улица';
+    }
+  }
+
+  if (!street_name) {
+    const numMkrMatch =
+      workWithoutLandmark.match(/(\d+[а-яa-z]?)\s*(?:микрорайон|мкр\.?|ш\/а)\b/i) ||
+      workWithoutLandmark.match(/(?:микрорайон|мкр\.?|ш\/а)\s*(\d+[а-яa-z]?)(?!\s*(?:дом|үй|кв|пәтер))/i);
+    if (numMkrMatch) {
+      street_type = 'микрорайон';
+      street_name = numMkrMatch[1].trim();
+    }
+  }
+
+  // 9. Выделение номера дома (сохраняя дроби, литеры, корпуса и казахский маркер «үй»)
   const explicitHouseMatch =
-    raw.match(/(?:дом|д\.?)\s*№?\s*(\d+(?:\/\d+)?[а-яa-z]?(?:\s*корпус\s*\d+)?)/i) ||
-    raw.match(/(\d+(?:\/\d+)?[а-яa-z]?)\s*дом/i);
+    workWithoutLandmark.match(/(?:дом|д\.?|үй)\s*№?\s*(\d+(?:\/\d+)?[а-яa-z]?(?:\s*корпус\s*\d+)?)/i) ||
+    workWithoutLandmark.match(/(\d+(?:\/\d+)?[а-яa-z]?(?:\s*корпус\s*\d+)?)\s*(?:дом|үй)/i);
 
   if (explicitHouseMatch) {
     house = explicitHouseMatch[1].trim();
   } else if (street_name) {
     const escapedStreet = street_name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const afterStreetRegex = new RegExp(
-      `${escapedStreet}(?:\\s+(?:микрорайон|переулок|улица|проспект))?\\s*,?\\s*(?:дом\\s*|д\\.?\\s*)?(\\d+(?:\\/\\d+)?[а-яa-z]?(?:\\s*корпус\\s*\\d+)?)`,
+      `${escapedStreet}(?:\\s+(?:микрорайон|шағын\\s+ауданы|переулок|улица|көшесі|проспект|даңғылы))?\\s*,?\\s*(?:дом\\s*|д\\.?\\s*|үй\\s*)?(\\d+(?:\\/\\d+)?[а-яa-z]?(?:\\s*корпус\\s*\\d+)?)`,
       'i'
     );
-    const afterMatch = raw.match(afterStreetRegex);
+    const afterMatch = workWithoutLandmark.match(afterStreetRegex);
     if (afterMatch) {
       house = afterMatch[1].trim();
+    }
+  }
+
+  // Голый хвост квартиры («Улица Курильская, 9, 2»)
+  if (street_name && house && !apartment) {
+    const bareApt = workWithoutLandmark.match(/,\s*(\d+[а-яa-z]?)\s*$/);
+    if (bareApt && bareApt[1] !== house) {
+      apartment = bareApt[1];
     }
   }
 
@@ -315,6 +337,10 @@ export function parseRawAddressLocal(item: RawAddressItem): ParsedAddressItem {
     street_name = living_area;
     street_type = 'микрорайон';
     living_area = null;
+  }
+
+  if (!street_name && !house && !city) {
+    landmark = null;
   }
 
   // Вычисление confidence

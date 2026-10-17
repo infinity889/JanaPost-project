@@ -46,7 +46,6 @@ export interface ReferenceEntry {
   province: string;
   district: string | null;
   living_area?: string | null;
-  postalZone: string;
   notes?: string;
 }
 

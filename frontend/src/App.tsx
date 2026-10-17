@@ -6,10 +6,6 @@ import { AddressInspector } from './components/OperatorWorkspace/AddressInspecto
 import { DeliveryAnalyticsPage } from './components/DeliveryAnalytics/DeliveryAnalyticsPage';
 import { ReferenceAndApiPage } from './components/ReferenceAndApi/ReferenceAndApiPage';
 import {
-  DEMO_PARSED_DATASET,
-  generateLargeBatchDataset,
-} from './data/demoDataset';
-import {
   ActiveTab,
   AddressRecordUI,
   BatchParseMetrics,
@@ -34,13 +30,10 @@ export function App() {
   );
   const [apiOnline, setApiOnline] = useState<boolean>(false);
   const [isTestingApi, setIsTestingApi] = useState<boolean>(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
-  const [records, setRecords] = useState<AddressRecordUI[]>(() =>
-    DEMO_PARSED_DATASET.map((item) => ({ ...item }))
-  );
-  const [selectedId, setSelectedId] = useState<string | null>(
-    DEMO_PARSED_DATASET[0]?.id ?? null
-  );
+  const [records, setRecords] = useState<AddressRecordUI[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   // Table Filters, Search, Sorting & Pagination
   const [activeFilter, setActiveFilter] = useState<TableFilterTab>('all');
@@ -49,13 +42,38 @@ export function App() {
   const [currentPage, setCurrentPage] = useState<number>(1);
 
   const [metrics, setMetrics] = useState<BatchParseMetrics>({
-    totalRecords: DEMO_PARSED_DATASET.length,
-    durationMs: 1.4,
-    msPerRecord: 0.06,
-    projected1000Ms: 60,
-    source: 'local',
+    totalRecords: 0,
+    durationMs: 0,
+    msPerRecord: 0,
+    projected1000Ms: 0,
+    source: 'api',
     timestamp: new Date().toLocaleTimeString('ru-RU'),
   });
+
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('http://localhost:8000/api/health');
+        if (!cancelled && res.ok) {
+          setApiOnline(true);
+        }
+      } catch {
+        try {
+          const relRes = await fetch('/api/health');
+          if (!cancelled && relRes.ok) {
+            setApiUrl('/api/parse');
+            setApiOnline(true);
+          }
+        } catch {
+          // Offline fallback mode
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // KPI Counters
   const kpiStats = useMemo(() => {
@@ -130,7 +148,7 @@ export function App() {
       return;
     }
 
-    const newId = `rec_sbx_${String(records.length + 1).padStart(3, '0')}`;
+    const newId = `rec_${String(records.length + 1).padStart(5, '0')}`;
     const rawItem: RawAddressItem = { id: newId, raw_address: rawAddress };
 
     const { records: parsedArr, apiOnline: isOnline } = await parseAddressBatch(
@@ -141,7 +159,16 @@ export function App() {
     setApiOnline(isOnline);
 
     const parsedRecord = parsedArr[0] || parseRawAddressLocal(rawItem);
-    setRecords((prev) => [parsedRecord, ...prev]);
+    setRecords((prev) => {
+      const next = [parsedRecord, ...prev];
+      setMetrics((m) => ({
+        ...m,
+        totalRecords: next.length,
+        source: isOnline ? 'api' : 'local',
+        timestamp: new Date().toLocaleTimeString('ru-RU'),
+      }));
+      return next;
+    });
     setSelectedId(parsedRecord.id);
     setActiveFilter('all');
     setSearchQuery('');
@@ -214,6 +241,7 @@ export function App() {
 
   // 5. Upload JSON file
   const handleUploadJson = async (file: File) => {
+    setUploadError(null);
     try {
       const text = await file.text();
       const parsedJson = JSON.parse(text);
@@ -221,9 +249,16 @@ export function App() {
         ? parsedJson
         : Array.isArray(parsedJson?.records)
         ? parsedJson.records
+        : Array.isArray(parsedJson?.items)
+        ? parsedJson.items
         : null;
 
-      if (!inputArray || inputArray.length === 0) return;
+      if (!inputArray || inputArray.length === 0) {
+        setUploadError(
+          'Файл не содержит массива записей (ожидается JSON-массив объектов с полями id и raw_address).'
+        );
+        return;
+      }
 
       const {
         records: resultRecords,
@@ -239,59 +274,31 @@ export function App() {
       setActiveFilter('all');
       setSearchQuery('');
     } catch {
-      // Ignore malformed JSON
+      setUploadError(
+        `Не удалось прочитать JSON из файла «${file.name}». Проверьте синтаксис файла.`
+      );
     }
   };
 
-  // 6. Load TZ Demo Set
-  const handleLoadDemoSet = () => {
-    const start = performance.now();
-    const cloned = DEMO_PARSED_DATASET.map((item) => ({ ...item }));
-    const duration = Math.max(
-      0.5,
-      Number((performance.now() - start).toFixed(2))
-    );
-    setRecords(cloned);
-    setSelectedId(cloned[0]?.id ?? null);
+  // 6. Clear loaded records
+  const handleClearRecords = () => {
+    setUploadError(null);
+    setRecords([]);
+    setSelectedId(null);
     setActiveFilter('all');
     setSearchQuery('');
     setCurrentPage(1);
     setMetrics({
-      totalRecords: cloned.length,
-      durationMs: duration,
-      msPerRecord: Number((duration / cloned.length).toFixed(3)),
-      projected1000Ms: 55,
-      source: 'local',
+      totalRecords: 0,
+      durationMs: 0,
+      msPerRecord: 0,
+      projected1000Ms: 0,
+      source: apiOnline ? 'api' : 'local',
       timestamp: new Date().toLocaleTimeString('ru-RU'),
     });
   };
 
-  // 7. Load 1000-record stress-test batch
-  const handleLoadStressSet = () => {
-    const start = performance.now();
-    const batch1000 = generateLargeBatchDataset(1000);
-    const duration = Math.max(
-      1.2,
-      Number((performance.now() - start).toFixed(2))
-    );
-    const msPerRec = Number((duration / batch1000.length).toFixed(4));
-
-    setRecords(batch1000);
-    setSelectedId(batch1000[0]?.id ?? null);
-    setActiveFilter('all');
-    setSearchQuery('');
-    setCurrentPage(1);
-    setMetrics({
-      totalRecords: batch1000.length,
-      durationMs: duration,
-      msPerRecord: msPerRec,
-      projected1000Ms: Math.round(duration),
-      source: 'local',
-      timestamp: new Date().toLocaleTimeString('ru-RU'),
-    });
-  };
-
-  // 8. Export strictly compliant sample_output.json
+  // 7. Export strictly compliant sample_output.json
   const handleDownloadJson = () => {
     const strictOutput: ParsedAddressItem[] = records.map((rec) =>
       toStrictExportItem(rec)
@@ -310,22 +317,38 @@ export function App() {
     URL.revokeObjectURL(url);
   };
 
-  // 9. Test API connection on Page 3
+  // 8. Test API connection on Page 3
   const handleTestApiConnection = async () => {
     setIsTestingApi(true);
-    const rawItems: RawAddressItem[] = records.map((r) => ({
-      id: r.id,
-      raw_address: r.raw_address,
-    }));
-    const {
-      records: reparsed,
-      metrics: newMetrics,
-      apiOnline: online,
-    } = await parseAddressBatch(rawItems, apiUrl, true);
+    try {
+      const baseOrigin = apiUrl.replace(/\/(?:api\/)?parse\/?$/, '');
+      const healthRes = await fetch(
+        `${baseOrigin || 'http://localhost:8000'}/api/health`
+      );
+      if (healthRes.ok) {
+        setApiOnline(true);
+      } else {
+        setApiOnline(false);
+      }
+    } catch {
+      setApiOnline(false);
+    }
 
-    setRecords(reparsed);
-    setMetrics(newMetrics);
-    setApiOnline(online);
+    if (records.length > 0) {
+      const rawItems: RawAddressItem[] = records.map((r) => ({
+        id: r.id,
+        raw_address: r.raw_address,
+      }));
+      const {
+        records: reparsed,
+        metrics: newMetrics,
+        apiOnline: online,
+      } = await parseAddressBatch(rawItems, apiUrl, true);
+
+      setRecords(reparsed);
+      setMetrics(newMetrics);
+      setApiOnline(online);
+    }
     setIsTestingApi(false);
   };
 
@@ -340,16 +363,30 @@ export function App() {
         lowConfidenceCount={kpiStats.low}
         metrics={metrics}
         onUploadJson={handleUploadJson}
-        onLoadDemoSet={handleLoadDemoSet}
-        onLoadStressSet={handleLoadStressSet}
+        onClearRecords={handleClearRecords}
         onDownloadJson={handleDownloadJson}
       />
+
+      {uploadError && (
+        <div
+          role="alert"
+          className="bg-amber-50 border-b border-amber-200 px-5 py-2 text-xs text-amber-900 flex items-center justify-between shrink-0"
+        >
+          <span>{uploadError}</span>
+          <button
+            type="button"
+            onClick={() => setUploadError(null)}
+            className="text-amber-700 hover:text-amber-950 font-medium cursor-pointer ml-4"
+          >
+            Закрыть
+          </button>
+        </div>
+      )}
 
       {/* Full-Viewport Main Area */}
       <main className="flex-1 min-h-0 flex flex-col overflow-hidden">
         {activeTab === 'workspace' && (
           <>
-            {/* Compact 52px Toolbar above the table */}
             <LiveSandbox
               onParseSingle={handleParseSingle}
               totalRecords={kpiStats.total}
@@ -363,7 +400,6 @@ export function App() {
               }}
             />
 
-            {/* Split-View: Left 60% Table, Right 40% Inspector (independent scrolling) */}
             <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[3fr_2fr] overflow-hidden">
               <AddressTable
                 records={filteredRecords}
@@ -414,10 +450,6 @@ export function App() {
             apiOnline={apiOnline}
             metrics={metrics}
             onTestApiConnection={handleTestApiConnection}
-            onRun1000Benchmark={() => {
-              handleLoadStressSet();
-              setActiveTab('workspace');
-            }}
             isTestingApi={isTestingApi}
           />
         )}

@@ -43,3 +43,5 @@ Thumbs.db
 
 # Local agent skills / scratch
 .agents/
+data/val_pred.json
+

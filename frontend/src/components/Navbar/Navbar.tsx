@@ -1,10 +1,5 @@
 import React, { useRef } from 'react';
-import {
-  Upload,
-  Download,
-  MapPin,
-  RotateCcw,
-} from 'lucide-react';
+import { Upload, Download, MapPin, Trash2 } from 'lucide-react';
 import { ActiveTab, BatchParseMetrics } from '../../types/address';
 
 interface NavbarProps {
@@ -16,8 +11,7 @@ interface NavbarProps {
   lowConfidenceCount: number;
   metrics: BatchParseMetrics;
   onUploadJson: (file: File) => void;
-  onLoadDemoSet: () => void;
-  onLoadStressSet: () => void;
+  onClearRecords: () => void;
   onDownloadJson: () => void;
 }
 
@@ -29,7 +23,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   totalCount,
   lowConfidenceCount,
   onUploadJson,
-  onLoadDemoSet,
+  onClearRecords,
   onDownloadJson,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -67,7 +61,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         <div className="h-5 w-px bg-slate-200 hidden md:block" />
 
-        {/* Navigation Tabs with crisp bottom active bar */}
+        {/* Navigation Tabs */}
         <nav
           role="tablist"
           aria-label="Разделы системы"
@@ -139,7 +133,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             }`}
           />
           <span className="font-medium">
-            {apiOnline ? 'API подключен' : 'Автономный режим'}
+            {apiOnline ? 'API подключен' : 'Ожидание API'}
           </span>
         </button>
 
@@ -163,20 +157,23 @@ export const Navbar: React.FC<NavbarProps> = ({
           <span>Загрузить JSON</span>
         </button>
 
-        <button
-          type="button"
-          onClick={onLoadDemoSet}
-          title="Восстановить исходный демо-набор"
-          className="h-8 px-3 rounded-md text-xs font-medium text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-50 border border-slate-200 inline-flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
-        >
-          <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
-          <span className="hidden sm:inline">Сбросить</span>
-        </button>
+        {totalCount > 0 && (
+          <button
+            type="button"
+            onClick={onClearRecords}
+            title="Очистить таблицу"
+            className="h-8 px-3 rounded-md text-xs font-medium text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-50 border border-slate-200 inline-flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+          >
+            <Trash2 className="w-3.5 h-3.5 text-slate-500" />
+            <span className="hidden sm:inline">Очистить</span>
+          </button>
+        )}
 
         <button
           type="button"
+          disabled={totalCount === 0}
           onClick={onDownloadJson}
-          className="h-8 px-3.5 rounded-md text-xs font-medium bg-emerald-600 hover:bg-emerald-700 text-white inline-flex items-center gap-1.5 transition-colors shadow-2xs cursor-pointer"
+          className="h-8 px-3.5 rounded-md text-xs font-medium bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:pointer-events-none text-white inline-flex items-center gap-1.5 transition-colors shadow-2xs cursor-pointer"
         >
           <Download className="w-3.5 h-3.5" />
           <span>Скачать .json</span>
