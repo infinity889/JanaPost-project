@@ -142,25 +142,11 @@ export const ReferenceAndApiPage: React.FC<ReferenceAndApiPageProps> = ({
             </div>
 
             <p className="text-xs text-slate-500">
-              Все запросы разбора и поиска по справочнику выполняются через локальную базу SQLite бэкенда.
+              Все запросы разбора и поиска по справочнику выполняются через базу бэкенда.
             </p>
           </section>
 
-          <section className="lg:col-span-5 bg-white rounded-lg border border-slate-200 p-5 flex flex-col justify-between gap-4 shadow-2xs">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-sm font-semibold text-slate-900">
-                  Локальный гео-индекс (КАТО 2026 + OpenStreetMap РК)
-                </h2>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  База kaz_geo.sqlite: 20 регионов, районы, города, сёла и улицы РК
-                </p>
-              </div>
-              <span className="px-2 py-0.5 rounded text-xs font-mono font-medium bg-slate-100 text-slate-700 border border-slate-200">
-                kaz_geo.sqlite
-              </span>
-            </div>
-
+          <section className="lg:col-span-5 bg-white rounded-lg border border-slate-200 p-5 flex flex-col justify-center gap-4 shadow-2xs">
             <div className="grid grid-cols-3 gap-3 bg-slate-50 p-3 rounded-lg border border-slate-200/80">
               <div>
                 <div className="text-[11px] text-slate-500">Нас. пункты КАТО</div>
@@ -193,11 +179,8 @@ export const ReferenceAndApiPage: React.FC<ReferenceAndApiPageProps> = ({
           <div className="p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-sm font-semibold text-slate-900">
-                Реестр гео-объектов Казахстана (КАТО 2026 + OpenStreetMap)
+                Реестр гео-объектов Казахстана
               </h2>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Прямая выборка из локальной базы backend/data/kaz_geo.sqlite
-              </p>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
@@ -230,7 +213,7 @@ export const ReferenceAndApiPage: React.FC<ReferenceAndApiPageProps> = ({
                   type="search"
                   value={dictSearch}
                   onChange={(e) => setDictSearch(e.target.value)}
-                  placeholder="Поиск в kaz_geo.sqlite..."
+                  placeholder="Поиск в базе..."
                   aria-label="Поиск по справочнику"
                   className="w-full h-8 pl-8 pr-3 rounded-md border border-slate-200 bg-slate-50/70 text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-emerald-600"
                 />
