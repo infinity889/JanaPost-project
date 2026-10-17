@@ -23,6 +23,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 CACHE_PATH = ROOT_DIR / "data" / "kato_osm_cache.json"
+LOCAL_XLSX_PATH = ROOT_DIR / "КАТО_18.09.2026(1).xlsx"
 LOCAL_DOCX_PATH = Path("/home/nurbol/Загрузки/Изм_1_КАТО_ред1_рус.docx")
 NALOGIKZ_URL = "https://nalogikz.kz/docs/kato-klassifikator-administrativno-territorialnyh-obektov-2026-g.html"
 
@@ -55,41 +56,186 @@ KATO_PROVINCE_BY_PREFIX: Dict[str, str] = {
 def clean_kato_settlement_name(raw_name: str) -> Tuple[Optional[str], str]:
     """
     Очищает название объекта КАТО от служебных префиксов/суффиксов («г.», «с.», «п.», «Г.А.», «с.о.», «район»).
-    Возвращает (clean_name, kind), где kind in {'city', 'district', 'rural_district', 'region', 'skip'}.
+    Возвращает (clean_name, kind), где kind in {'city', 'village', 'district', 'rural_district', 'region', 'skip'}.
     """
     s = re.sub(r"\s+", " ", raw_name).strip()
     if not s:
         return None, "skip"
 
     # Пропускаем сельские и поселковые округа / администрации («Бесбидаикский с.о.», «Аксуская с.а.», «п.а.»)
-    if re.search(r"\b(?:с\.о\.|с\.а\.|п\.а\.|п\.о\.|сельский\s+округ|ауылдық\s+округ)\b", s, re.I):
+    if re.search(r"\b(?:с\.о\.?|с\.а\.?|п\.а\.?|п\.о\.?|сельский\s+округ|ауылдық\s+округ)\b", s, re.I):
         return None, "rural_district"
 
-    # Районы области или города («Ауэзовский район», «Жанасемейский район», «район Алматы»)
+    # Районы области или города («Ауэзовский район», «Жанасемейский район», «район Алматы», «район им.Казыбек би»)
     if re.search(r"\bрайон\b", s, re.I):
-        clean_d = re.sub(r"\bрайон[а-я]*\b", "", s, flags=re.I).strip(" ,.-")
+        clean_d = re.sub(r"\bрайон[а-я]*\b", "", s, flags=re.I)
+        clean_d = re.sub(r"\b(?:им\.|имени)\s*", "", clean_d, flags=re.I).strip(" ,.-")
         return (clean_d if clean_d else None), "district"
 
     # Городские администрации («Семей Г.А.», «Конаев Г.А.»)
-    if re.search(r"\bГ\.А\.", s, re.I):
+    if re.search(r"\bГ\.А\.?", s, re.I):
         clean_c = re.sub(r"\bГ\.А\.?", "", s, flags=re.I).strip(" ,.-")
         clean_c = re.sub(r"^(?:г\.|город)\s*", "", clean_c, flags=re.I).strip(" ,.-")
         return (clean_c if clean_c else None), "city"
 
-    # Населённые пункты («г.Конаев», «с.Степное», «п.Боралдай», «аул Косшы», «ст.Чемолган»)
+    # Города («г.Конаев», «г.Семей»)
+    m_city = re.match(r"^(?:г\.|город)\s*(.+)$", s, flags=re.I)
+    if m_city:
+        clean_c = m_city.group(1).strip(" ,.-")
+        return (clean_c if clean_c else None), "city"
+
+    # Посёлки, сёла, аулы, станции («с.Степное», «п.Боралдай», «аул Косшы», «ст.Чемолган»)
     m_settle = re.match(
-        r"^(?:г\.|город|п\.|пос\.|поселок|посёлок|с\.|село|аул|а\.|ст\.|станция|разъезд|рзд\.|уч\.)\s*(.+)$",
+        r"^(?:п\.|пос\.|поселок|посёлок|с\.|село|аул|а\.|ст\.|станция|разъезд|рзд\.|уч\.|отд\.)\s*(.+)$",
         s,
         flags=re.I,
     )
     if m_settle:
         clean_c = m_settle.group(1).strip(" ,.-")
-        # Пропускаем номерные уч./рзд. вроде «рзд.19»
         if re.fullmatch(r"\d+[а-яa-z]?", clean_c, flags=re.I):
             return None, "skip"
-        return clean_c, "city"
+        return clean_c, "village"
 
     return None, "skip"
+
+
+def clean_kato_kaz_name(kaz_name: str) -> Optional[str]:
+    """Очищает казахское название из КАТО от служебных сокращений (қ., а., к., ауданы, Қ.Ә., а.о.)."""
+    s = re.sub(r"\s+", " ", kaz_name).strip()
+    if not s:
+        return None
+    if re.search(r"\b(?:а\.о\.?|к\.о\.?|а\.ә\.?|п\.ә\.?)\b", s, flags=re.I):
+        return None
+    s = re.sub(
+        r"\b(?:Қ\.Ә\.?|қ\.ә\.?|атын\.?\s*ауданы|атындағы\s+ауданы|ауданы|қаласы|ауылы|кенті|қ\.|а\.|к\.|ст\.|рзд\.)\b",
+        "",
+        s,
+        flags=re.I,
+    ).strip(" ,.-")
+    if not s or re.fullmatch(r"\d+[а-яa-zәіңғүұқөһ]?", s, flags=re.I):
+        return None
+    return s
+
+
+def parse_kato_xlsx() -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """
+    Парсит официальный Excel-файл КАТО с data.egov.kz (КАТО_18.09.2026(1).xlsx, 15 587 строк).
+    Извлекает все города, посёлки, сёла и районы РК с русскими и казахскими названиями.
+    """
+    if not LOCAL_XLSX_PATH.exists():
+        return [], []
+
+    with zipfile.ZipFile(LOCAL_XLSX_PATH) as z:
+        ss: List[str] = []
+        if "xl/sharedStrings.xml" in z.namelist():
+            root = ET.fromstring(z.read("xl/sharedStrings.xml"))
+            for si in root:
+                ss.append("".join(t.text or "" for t in si.iter() if t.tag.endswith("}t")))
+        sheet = ET.fromstring(z.read("xl/worksheets/sheet1.xml"))
+
+    rows: List[List[str]] = []
+    for r in sheet.iter():
+        if not r.tag.endswith("}row"):
+            continue
+        vals: List[str] = []
+        for c in r:
+            t = c.attrib.get("t")
+            v_el = next((x for x in c if x.tag.endswith("}v") or x.tag.endswith("}is")), None)
+            if v_el is None:
+                vals.append("")
+            elif t == "s":
+                vals.append(ss[int(v_el.text)] if v_el.text else "")
+            else:
+                vals.append(
+                    "".join(x.text or "" for x in v_el.iter())
+                    if t == "inlineStr"
+                    else (v_el.text or "")
+                )
+        rows.append(vals)
+
+    # 1. Первым проходом собираем районы областей (cd != '00', ef == '00') и городские администрации (Г.А.)
+    district_by_abcd: Dict[str, str] = {}
+    city_by_abcd: Dict[str, str] = {}
+    districts: Dict[Tuple[str, Optional[str], str], Dict[str, Any]] = {}
+
+    for vals in rows[1:]:
+        if len(vals) < 8:
+            continue
+        te, ab, cd, ef, hij, _k, kaz_name, rus_name = vals[:8]
+        province = KATO_PROVINCE_BY_PREFIX.get(ab)
+        if not province:
+            continue
+
+        clean_ru, kind = clean_kato_settlement_name(rus_name)
+        clean_kz = clean_kato_kaz_name(kaz_name)
+
+        if kind == "city" and clean_ru and ef == "00":
+            city_by_abcd[ab + cd] = clean_ru
+
+        if kind == "district" and clean_ru:
+            aliases = {clean_ru.lower()}
+            if clean_kz:
+                aliases.add(clean_kz.lower())
+            # Определяем, это район области или внутригородской район (Алматы, Астана, Шымкент, Караганда, Актобе, Тараз)
+            parent_city: Optional[str] = None
+            if ab in ("71", "75", "79"):
+                parent_city = province
+            elif ef != "00" and (ab + cd) in city_by_abcd:
+                parent_city = city_by_abcd[ab + cd]
+            else:
+                district_by_abcd[ab + cd] = clean_ru
+
+            d_key = (clean_ru.lower(), parent_city, province)
+            if d_key not in districts:
+                districts[d_key] = {
+                    "name": clean_ru,
+                    "city": parent_city,
+                    "province": province,
+                    "aliases": sorted(aliases),
+                }
+            else:
+                districts[d_key]["aliases"] = sorted(set(districts[d_key]["aliases"]) | aliases)
+
+    # 2. Вторым проходом собираем все города, посёлки и сёла (сначала города kind=='city', затем сёла kind=='village')
+    settlements: Dict[Tuple[str, str, Optional[str]], Dict[str, Any]] = {}
+    for target_kind in ("city", "village"):
+        for vals in rows[1:]:
+            if len(vals) < 8:
+                continue
+            te, ab, cd, ef, hij, _k, kaz_name, rus_name = vals[:8]
+            province = KATO_PROVINCE_BY_PREFIX.get(ab)
+            if not province:
+                continue
+
+            clean_ru, kind = clean_kato_settlement_name(rus_name)
+            if kind != target_kind or not clean_ru or len(clean_ru) < 2:
+                continue
+
+            clean_kz = clean_kato_kaz_name(kaz_name)
+            parent_dist = district_by_abcd.get(ab + cd)
+            aliases = {clean_ru.lower()}
+            if clean_kz and len(clean_kz) >= 2:
+                aliases.add(clean_kz.lower())
+
+            s_key = (clean_ru.lower(), province, parent_dist)
+            if s_key not in settlements:
+                settlements[s_key] = {
+                    "name": clean_ru,
+                    "province": province,
+                    "district": parent_dist,
+                    "is_city": target_kind == "city",
+                    "aliases": sorted(aliases),
+                }
+            else:
+                settlements[s_key]["aliases"] = sorted(
+                    set(settlements[s_key]["aliases"]) | aliases
+                )
+
+    print(
+        f"[КАТО XLSX data.egov.kz] Извлечено из {LOCAL_XLSX_PATH.name} ({len(rows)-1} строк): "
+        f"районов={len(districts)}, населённых пунктов={len(settlements)}"
+    )
+    return list(settlements.values()), list(districts.values())
 
 
 def parse_nalogikz_page() -> Dict[str, str]:
@@ -188,13 +334,11 @@ def parse_local_kato_docx() -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]
         if not province:
             continue
         clean_name, kind = clean_kato_settlement_name(raw_name)
-        if kind != "city" or not clean_name or len(clean_name) < 2:
+        if kind not in ("city", "village") or not clean_name or len(clean_name) < 2:
             continue
 
         parent_dist = district_by_abcd.get(ab + cd, (None, province))[0]
         key = (clean_name.lower(), province)
-        # Если этот населённый пункт уже добавлен из директивы В/И (например, в новую Абайскую или Жетысускую область),
-        # не перезаписываем его старой записью из директивы А
         if directive == "А" and any(k[0] == clean_name.lower() for k in settlements):
             continue
 
@@ -203,6 +347,7 @@ def parse_local_kato_docx() -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]
                 "name": clean_name,
                 "province": province,
                 "district": parent_dist,
+                "is_city": kind == "city",
                 "aliases": [clean_name.lower()],
             }
 
@@ -358,7 +503,6 @@ def fetch_osm_streets_for_cities() -> List[Dict[str, Any]]:
             if not clean_name or len(clean_name) < 2:
                 continue
 
-            # Вычисляем координаты центра для приближённой привязки к району города
             lat = el.get("lat") or (el.get("center", {}) or {}).get("lat")
             lon = el.get("lon") or (el.get("center", {}) or {}).get("lon")
             district = infer_city_district_by_coords(city, lat, lon)
@@ -395,7 +539,6 @@ def infer_city_district_by_coords(city: str, lat: Optional[float], lon: Optional
         return None
 
     if city == "Алматы":
-        # 8 районов Алматы по географическим секторам
         if lat > 43.285:
             return "Жетысуский" if lon < 76.935 else "Турксибский"
         if lon < 76.825:
@@ -407,7 +550,6 @@ def infer_city_district_by_coords(city: str, lat: Optional[float], lon: Optional
         return "Алмалинский" if lat > 43.238 else "Бостандыкский"
 
     if city == "Астана":
-        # 6 районов Астаны (Есиль, Нура, Сарыарка, Байконыр, Алматы, Сарайшык)
         if lat < 51.145:
             return "Нура" if lon < 71.405 else "Есиль"
         if lon < 71.425:
@@ -436,15 +578,40 @@ def infer_city_district_by_coords(city: str, lat: Optional[float], lon: Optional
 
 def main() -> int:
     regions = parse_nalogikz_page()
-    kato_settlements, kato_districts = parse_local_kato_docx()
+    xlsx_settlements, xlsx_districts = parse_kato_xlsx()
+    docx_settlements, docx_districts = parse_local_kato_docx()
+
+    # Объединяем населённые пункты (приоритет у КАТО_18.09.2026(1).xlsx с data.egov.kz, где есть и RU и KZ названия)
+    merged_settlements: Dict[Tuple[str, str], Dict[str, Any]] = {}
+    for s in xlsx_settlements + docx_settlements:
+        key = (s["name"].lower(), s["province"])
+        if key not in merged_settlements:
+            merged_settlements[key] = s
+        else:
+            merged_settlements[key]["aliases"] = sorted(
+                set(merged_settlements[key]["aliases"]) | set(s.get("aliases", []))
+            )
+            if not merged_settlements[key].get("district") and s.get("district"):
+                merged_settlements[key]["district"] = s["district"]
+
+    merged_districts: Dict[Tuple[str, Optional[str], str], Dict[str, Any]] = {}
+    for d in xlsx_districts + docx_districts:
+        key = (d["name"].lower(), d.get("city"), d["province"])
+        if key not in merged_districts:
+            merged_districts[key] = d
+        else:
+            merged_districts[key]["aliases"] = sorted(
+                set(merged_districts[key]["aliases"]) | set(d.get("aliases", []))
+            )
+
     osm_streets = fetch_osm_streets_for_cities()
 
     CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
     payload = {
-        "source": "KATO 2026 (nalogikz.kz + НК РК 11-2021) + OpenStreetMap Overpass API",
+        "source": "KATO 2026 (data.egov.kz КАТО_18.09.2026 + nalogikz.kz + НК РК 11-2021) + OpenStreetMap Overpass API",
         "regions": regions or KATO_PROVINCE_BY_PREFIX,
-        "kato_settlements": kato_settlements,
-        "kato_districts": kato_districts,
+        "kato_settlements": list(merged_settlements.values()),
+        "kato_districts": list(merged_districts.values()),
         "osm_streets": osm_streets,
     }
     with CACHE_PATH.open("w", encoding="utf-8") as f:
@@ -452,10 +619,12 @@ def main() -> int:
 
     print(
         f"[OK] Кэш КАТО 2026 + OSM сохранён в {CACHE_PATH} "
-        f"({CACHE_PATH.stat().st_size / 1024:.1f} KB)"
+        f"({CACHE_PATH.stat().st_size / 1024:.1f} KB, "
+        f"населённых пунктов КАТО: {len(merged_settlements)}, районов КАТО: {len(merged_districts)})"
     )
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
