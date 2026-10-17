@@ -34,12 +34,6 @@ const EXAMPLE_LABELS: Record<string, string> = {
 
 export const LiveSandbox: React.FC<LiveSandboxProps> = ({
   onParseSingle,
-  totalRecords,
-  highConfidenceCount,
-  lowConfidenceCount,
-  enrichedFromDbCount,
-  activeFilter,
-  onSelectFilter,
 }) => {
   const [inputValue, setInputValue] = useState<string>('');
   const [popoverOpen, setPopoverOpen] = useState<boolean>(false);
@@ -74,7 +68,6 @@ export const LiveSandbox: React.FC<LiveSandboxProps> = ({
 
   return (
     <div className="h-14 shrink-0 bg-slate-50/80 border-b border-slate-200 px-5 flex items-center justify-between gap-4">
-      {/* Left: Spacious Input + Standalone Parse Button + Popover "Примеры из ТЗ" */}
       <div className="flex items-center gap-2.5 flex-1 max-w-3xl">
         <form
           onSubmit={handleSubmit}
@@ -86,7 +79,7 @@ export const LiveSandbox: React.FC<LiveSandboxProps> = ({
               type="text"
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
-              placeholder="Введите любой сырой адрес для быстрого разбора..."
+              placeholder="Введите адресную строку для быстрого разбора..."
               aria-label="Проверить адрес вручную"
               className="w-full h-9 pl-10 pr-3.5 rounded-lg bg-white border border-slate-300 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20 transition-all shadow-2xs"
             />
@@ -102,7 +95,6 @@ export const LiveSandbox: React.FC<LiveSandboxProps> = ({
           </button>
         </form>
 
-        {/* Выпадающий по клику поповер "Примеры из ТЗ" */}
         <div ref={popoverRef} className="relative shrink-0">
           <button
             type="button"
@@ -114,7 +106,7 @@ export const LiveSandbox: React.FC<LiveSandboxProps> = ({
                 : 'bg-white border-slate-300 text-slate-700 hover:text-slate-900 hover:bg-slate-50'
             }`}
           >
-            <span>Примеры из ТЗ</span>
+            <span>Быстрые примеры</span>
             <ChevronDown
               className={`w-3.5 h-3.5 text-slate-400 transition-transform ${
                 popoverOpen ? 'rotate-180 text-emerald-600' : ''
@@ -125,9 +117,9 @@ export const LiveSandbox: React.FC<LiveSandboxProps> = ({
           {popoverOpen && (
             <div className="absolute left-0 mt-1.5 w-[480px] max-w-[92vw] bg-white rounded-lg border border-slate-200 shadow-xl py-1.5 z-40">
               <div className="px-3.5 py-1.5 text-[11px] font-medium text-slate-500 border-b border-slate-100 flex items-center justify-between">
-                <span>Тестовые кейсы из технического задания</span>
+                <span>Примеры нестандартных адресных строк</span>
                 <span className="font-mono text-[10px] text-slate-400">
-                  8 примеров
+                  8 строк
                 </span>
               </div>
               <div className="max-h-80 overflow-y-auto divide-y divide-slate-100">
@@ -152,73 +144,6 @@ export const LiveSandbox: React.FC<LiveSandboxProps> = ({
             </div>
           )}
         </div>
-      </div>
-
-      {/* Right: 4 компактных статусных счетчика в одну строчку */}
-      <div className="hidden xl:flex items-center gap-1.5 text-xs shrink-0 select-none">
-        <button
-          type="button"
-          onClick={() => onSelectFilter('all')}
-          className={`px-2.5 py-1.5 rounded-md transition-colors cursor-pointer ${
-            activeFilter === 'all'
-              ? 'bg-white text-slate-900 font-medium border border-slate-200 shadow-2xs'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          Всего:{' '}
-          <span className="font-mono font-semibold text-slate-900">
-            {totalRecords}
-          </span>
-        </button>
-
-        <span className="text-slate-300">·</span>
-
-        <div className="px-2 py-1.5 text-slate-600">
-          Уверенные:{' '}
-          <span className="font-mono font-semibold text-emerald-700">
-            {highConfidenceCount}
-          </span>
-        </div>
-
-        <span className="text-slate-300">·</span>
-
-        <button
-          type="button"
-          onClick={() =>
-            onSelectFilter(
-              activeFilter === 'low_confidence' ? 'all' : 'low_confidence'
-            )
-          }
-          className={`px-2.5 py-1.5 rounded-md transition-colors cursor-pointer ${
-            activeFilter === 'low_confidence'
-              ? 'bg-amber-50 text-amber-900 font-medium border border-amber-200'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          На проверку:{' '}
-          <span className="font-mono font-semibold text-amber-700">
-            {lowConfidenceCount}
-          </span>
-        </button>
-
-        <span className="text-slate-300">·</span>
-
-        <button
-          type="button"
-          onClick={() =>
-            onSelectFilter(activeFilter === 'from_db' ? 'all' : 'from_db')
-          }
-          className={`px-2.5 py-1.5 rounded-md transition-colors cursor-pointer ${
-            activeFilter === 'from_db'
-              ? 'bg-emerald-50 text-emerald-900 font-medium border border-emerald-200'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          Из БД:{' '}
-          <span className="font-mono font-semibold text-emerald-700">
-            {enrichedFromDbCount}
-          </span>
-        </button>
       </div>
     </div>
   );

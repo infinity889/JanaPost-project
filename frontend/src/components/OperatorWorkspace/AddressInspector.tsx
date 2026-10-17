@@ -190,10 +190,10 @@ export const AddressInspector: React.FC<AddressInspectorProps> = ({
             onKeyDown={handleKeyDownForm}
             className="space-y-5"
           >
-            {/* Group 1: Основной адрес */}
+            {/* Group 1: Основной адрес и география */}
             <div className="space-y-3">
               <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                Основной адрес
+                География и адрес
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -240,15 +240,74 @@ export const AddressInspector: React.FC<AddressInspectorProps> = ({
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <label
+                      htmlFor="field-district"
+                      className="text-xs font-medium text-slate-600"
+                    >
+                      Район
+                    </label>
+                    {districtFromDb && (
+                      <span className="inline-flex items-center gap-0.5 text-[10px] font-medium text-slate-500 bg-slate-100 px-1.5 py-0.2 rounded border border-slate-200">
+                        <Database className="w-2.5 h-2.5" />
+                        из БД
+                      </span>
+                    )}
+                  </div>
+                  <input
+                    id="field-district"
+                    type="text"
+                    value={record.district ?? ''}
+                    onChange={(e) =>
+                      handleTextChange('district', e.target.value)
+                    }
+                    placeholder="—"
+                    className={inputClass}
+                  />
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label
+                      htmlFor="field-living-area"
+                      className="text-xs font-medium text-slate-600"
+                    >
+                      Жилмассив / ЖК
+                    </label>
+                    {normalizeNullableString(record.living_area) && (
+                      <button
+                        type="button"
+                        onClick={() => onTransferMkrToStreet(record.id)}
+                        title="Перенести значение в поле Улица и установить тип «микрорайон»"
+                        className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[10px] font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 transition-colors cursor-pointer"
+                      >
+                        <ArrowRightLeft className="w-2.5 h-2.5" />
+                        <span>в Улицу</span>
+                      </button>
+                    )}
+                  </div>
+                  <input
+                    id="field-living-area"
+                    type="text"
+                    value={record.living_area ?? ''}
+                    onChange={(e) =>
+                      handleTextChange('living_area', e.target.value)
+                    }
+                    placeholder="—"
+                    className={inputClass}
+                  />
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label
                       htmlFor="field-street-type"
                       className="text-xs font-medium text-slate-600"
                     >
                       Тип улицы
                     </label>
                     {streetTypeFromDb && (
-                      <span className="inline-flex items-center gap-0.5 text-[10px] font-medium text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
+                      <span className="inline-flex items-center gap-0.5 text-[10px] font-medium text-slate-500 bg-slate-100 px-1.5 py-0.2 rounded border border-slate-200">
                         <Database className="w-2.5 h-2.5" />
-                        БД
+                        из БД
                       </span>
                     )}
                   </div>
@@ -335,16 +394,16 @@ export const AddressInspector: React.FC<AddressInspectorProps> = ({
                 >
                   <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                   <span>
-                    Внимание: по правилам ТЗ падеж не меняем, опечатки не исправляем — название улицы должно быть ровно как в строке
+                    Подстрока не найдена в исходном адресе (сохраняйте исходное написание без исправления опечаток)
                   </span>
                 </div>
               )}
             </div>
 
-            {/* Group 2: Детали и ориентир */}
+            {/* Group 2: Детали доставки */}
             <div className="space-y-3 pt-3 border-t border-slate-100">
               <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                Детали для курьера
+                Детали доставки
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -397,73 +456,6 @@ export const AddressInspector: React.FC<AddressInspectorProps> = ({
                     value={record.landmark ?? ''}
                     onChange={(e) =>
                       handleTextChange('landmark', e.target.value)
-                    }
-                    placeholder="—"
-                    className={inputClass}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Group 3: Справочные поля */}
-            <div className="space-y-3 pt-3 border-t border-slate-100">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                  Район и жилмассив
-                </span>
-                <button
-                  type="button"
-                  disabled={!normalizeNullableString(record.living_area)}
-                  onClick={() => onTransferMkrToStreet(record.id)}
-                  title="Перенести значение из поля Жилмассив в поле Улица и установить тип «микрорайон»"
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 disabled:opacity-40 disabled:pointer-events-none transition-colors cursor-pointer"
-                >
-                  <ArrowRightLeft className="w-3 h-3" />
-                  <span>Мкр → Улица</span>
-                </button>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label
-                      htmlFor="field-district"
-                      className="text-xs font-medium text-slate-600"
-                    >
-                      Район
-                    </label>
-                    {districtFromDb && (
-                      <span className="inline-flex items-center gap-0.5 text-[10px] font-medium text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
-                        <Database className="w-2.5 h-2.5" />
-                        БД
-                      </span>
-                    )}
-                  </div>
-                  <input
-                    id="field-district"
-                    type="text"
-                    value={record.district ?? ''}
-                    onChange={(e) =>
-                      handleTextChange('district', e.target.value)
-                    }
-                    placeholder="—"
-                    className={inputClass}
-                  />
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="field-living-area"
-                    className="block text-xs font-medium text-slate-600 mb-1"
-                  >
-                    Жилмассив
-                  </label>
-                  <input
-                    id="field-living-area"
-                    type="text"
-                    value={record.living_area ?? ''}
-                    onChange={(e) =>
-                      handleTextChange('living_area', e.target.value)
                     }
                     placeholder="—"
                     className={inputClass}

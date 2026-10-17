@@ -3,7 +3,6 @@ import {
   Upload,
   Download,
   MapPin,
-  Layers,
   RotateCcw,
 } from 'lucide-react';
 import { ActiveTab, BatchParseMetrics } from '../../types/address';
@@ -29,10 +28,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   apiUrl,
   totalCount,
   lowConfidenceCount,
-  metrics,
   onUploadJson,
   onLoadDemoSet,
-  onLoadStressSet,
   onDownloadJson,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -133,20 +130,16 @@ export const Navbar: React.FC<NavbarProps> = ({
         <button
           type="button"
           onClick={() => onTabChange('reference')}
-          title={`Эндпоинт: ${apiUrl} (${metrics.msPerRecord} мс/запись)`}
+          title={`Эндпоинт: ${apiUrl}`}
           className="hidden xl:inline-flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-transparent transition-colors cursor-pointer"
         >
           <span
             className={`w-2 h-2 rounded-full ${
-              apiOnline ? 'bg-emerald-500' : 'bg-emerald-500'
+              apiOnline ? 'bg-emerald-500' : 'bg-slate-400'
             }`}
           />
           <span className="font-medium">
-            {apiOnline ? 'API подключен' : 'Локальный движок'}
-          </span>
-          <span className="text-slate-300">|</span>
-          <span className="font-mono text-[11px] text-slate-500">
-            {metrics.msPerRecord} мс
+            {apiOnline ? 'API подключен' : 'Автономный режим'}
           </span>
         </button>
 
@@ -173,21 +166,11 @@ export const Navbar: React.FC<NavbarProps> = ({
         <button
           type="button"
           onClick={onLoadDemoSet}
-          title="Восстановить исходный демо-набор из 22 адресов ТЗ"
+          title="Восстановить исходный демо-набор"
           className="h-8 px-3 rounded-md text-xs font-medium text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-50 border border-slate-200 inline-flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
         >
           <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
-          <span className="hidden sm:inline">Демо-набор ТЗ</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={onLoadStressSet}
-          className="hidden 2xl:inline-flex h-8 px-2.5 rounded-md text-xs font-medium text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-50 border border-slate-200 items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
-          title="Сгенерировать массив из 1000 записей для проверки пагинации и скорости"
-        >
-          <Layers className="w-3.5 h-3.5 text-slate-500" />
-          <span>1 000 строк</span>
+          <span className="hidden sm:inline">Сбросить</span>
         </button>
 
         <button

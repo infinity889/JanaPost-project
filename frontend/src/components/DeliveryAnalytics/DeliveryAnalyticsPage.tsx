@@ -110,35 +110,30 @@ export const DeliveryAnalyticsPage: React.FC<DeliveryAnalyticsPageProps> = ({
         {
           key: 'house',
           label: 'Номер дома',
-          hint: 'С учетом дробей и корпусов (55/6, 12а)',
           count: houseFilled,
           percent: Math.round((houseFilled / total) * 100),
         },
         {
           key: 'apartment',
-          label: 'Квартира / офис',
-          hint: 'Очищено от префиксов «кв», «flat»',
+          label: 'Квартира',
           count: apartmentFilled,
           percent: Math.round((apartmentFilled / total) * 100),
         },
         {
           key: 'entrance',
           label: 'Подъезд',
-          hint: 'Доступ во двор и к домофону без звонка',
           count: entranceFilled,
           percent: Math.round((entranceFilled / total) * 100),
         },
         {
           key: 'floor',
           label: 'Этаж',
-          hint: 'Быстрый подъем курьера до двери',
           count: floorFilled,
           percent: Math.round((floorFilled / total) * 100),
         },
         {
           key: 'landmark',
           label: 'Ориентир',
-          hint: 'Магазины, ЖК, ТЦ и примечания',
           count: landmarkFilled,
           percent: Math.round((landmarkFilled / total) * 100),
         },
@@ -160,10 +155,10 @@ export const DeliveryAnalyticsPage: React.FC<DeliveryAnalyticsPageProps> = ({
         <div className="bg-white rounded-lg border border-slate-200 p-5 flex flex-wrap items-center justify-between gap-4 shadow-2xs">
           <div>
             <h1 className="text-base font-semibold text-slate-900">
-              Аналитика зон доставки и качества адресных данных
+              Аналитика зон доставки и полноты данных
             </h1>
             <p className="text-xs text-slate-500 mt-1">
-              Автоматическая тарификация по районам и оценка готовности адресов для курьерской службы Jana Post
+              Сводка по населенным пунктам, административным районам и заполненности полей
             </p>
           </div>
 
@@ -201,7 +196,7 @@ export const DeliveryAnalyticsPage: React.FC<DeliveryAnalyticsPageProps> = ({
                   Распределение заказов по географии
                 </h2>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Нормализованные населенные пункты и области без дублей
+                  Нормализованные населенные пункты и области
                 </p>
               </div>
 
@@ -264,13 +259,13 @@ export const DeliveryAnalyticsPage: React.FC<DeliveryAnalyticsPageProps> = ({
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h2 className="text-sm font-semibold text-slate-900">
-                  Полнота данных для курьера
+                  Заполненность детальных полей
                 </h2>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Снижение числа уточняющих звонков при доставке
+                  Доля записей с распознанными реквизитами доставки
                 </p>
               </div>
-              <span className="text-xs font-mono text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+              <span className="text-xs font-mono text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
                 {analytics.total} зап.
               </span>
             </div>
@@ -279,14 +274,9 @@ export const DeliveryAnalyticsPage: React.FC<DeliveryAnalyticsPageProps> = ({
               {analytics.courierFields.map((f) => (
                 <div key={f.key} className="space-y-1">
                   <div className="flex items-center justify-between text-xs">
-                    <div>
-                      <span className="font-medium text-slate-800">
-                        {f.label}
-                      </span>
-                      <span className="text-slate-400 ml-2 hidden sm:inline text-[11px]">
-                        {f.hint}
-                      </span>
-                    </div>
+                    <span className="font-medium text-slate-800">
+                      {f.label}
+                    </span>
                     <span className="font-mono text-slate-600">
                       {f.count} ({f.percent}%)
                     </span>

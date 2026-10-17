@@ -20,7 +20,7 @@ export const DEMO_PARSED_DATASET: AddressRecordUI[] = [
   {
     id: 'rec_00418',
     raw_address: '66квартал 12дом 69квартира',
-    province: 'Карагандинская',
+    province: 'Карагандинская область',
     city: 'Караганда',
     district: 'Казыбек би',
     living_area: null,
@@ -68,7 +68,7 @@ export const DEMO_PARSED_DATASET: AddressRecordUI[] = [
   {
     id: 'rec_00421',
     raw_address: 'Нурсити 2 микрорайон 11дом 5 подьезд 239 кв',
-    province: 'Актюбинская',
+    province: 'Актюбинская область',
     city: 'Актобе',
     district: 'Алматы',
     living_area: null,
@@ -100,7 +100,7 @@ export const DEMO_PARSED_DATASET: AddressRecordUI[] = [
   {
     id: 'rec_00423',
     raw_address: 'Кулманова 133',
-    province: 'Атырауская',
+    province: 'Атырауская область',
     city: 'Атырау',
     district: null,
     living_area: null,
@@ -180,7 +180,7 @@ export const DEMO_PARSED_DATASET: AddressRecordUI[] = [
   {
     id: 'rec_00428',
     raw_address: 'пос. Боралдай, мкр Водник, ул Абая 1/2',
-    province: 'Алматинская',
+    province: 'Алматинская область',
     city: 'Боралдай',
     district: 'Илийский',
     living_area: 'Водник',
@@ -334,8 +334,8 @@ export const DEMO_PARSED_DATASET: AddressRecordUI[] = [
     apartment: null,
     entrance: null,
     floor: null,
-    landmark: 'самовывоз со склада или позвонить заранее до обеда',
-    confidence: 0.18,
+    landmark: null,
+    confidence: 0.12,
   },
   {
     id: 'rec_00438',

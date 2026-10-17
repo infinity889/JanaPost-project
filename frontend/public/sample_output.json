@@ -18,7 +18,7 @@
   {
     "id": "rec_00418",
     "raw_address": "66квартал 12дом 69квартира",
-    "province": "Карагандинская",
+    "province": "Карагандинская область",
     "city": "Караганда",
     "district": "Казыбек би",
     "living_area": null,
@@ -66,7 +66,7 @@
   {
     "id": "rec_00421",
     "raw_address": "Нурсити 2 микрорайон 11дом 5 подьезд 239 кв",
-    "province": "Актюбинская",
+    "province": "Актюбинская область",
     "city": "Актобе",
     "district": "Алматы",
     "living_area": null,
@@ -98,7 +98,7 @@
   {
     "id": "rec_00423",
     "raw_address": "Кулманова 133",
-    "province": "Атырауская",
+    "province": "Атырауская область",
     "city": "Атырау",
     "district": null,
     "living_area": null,

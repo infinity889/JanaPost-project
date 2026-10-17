@@ -293,8 +293,8 @@ export const AddressTable: React.FC<AddressTableProps> = ({
                               </span>
                               {districtFromDb && (
                                 <span
-                                  title="Район обогащен из справочника БД"
-                                  className="text-[9px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1 rounded shrink-0"
+                                  title="Восстановлено по гео-справочнику"
+                                  className="text-[9px] font-medium text-slate-500 bg-slate-100 border border-slate-200/80 px-1 rounded shrink-0"
                                 >
                                   БД
                                 </span>
@@ -326,8 +326,8 @@ export const AddressTable: React.FC<AddressTableProps> = ({
                               </span>
                               {streetTypeFromDb && (
                                 <span
-                                  title="Тип улицы обогащен из справочника БД"
-                                  className="text-[9px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1 rounded shrink-0"
+                                  title="Тип улицы определен по справочнику"
+                                  className="text-[9px] font-medium text-slate-500 bg-slate-100 border border-slate-200/80 px-1 rounded shrink-0"
                                 >
                                   БД
                                 </span>
