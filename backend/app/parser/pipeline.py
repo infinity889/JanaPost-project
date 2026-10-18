@@ -258,7 +258,10 @@ class AddressParserPipeline:
         self, name_str: str
     ) -> List[Tuple[str, str, Optional[str]]]:
         c_norm = normalize_lookup_key(name_str)
+        word_count = len(c_norm.split())
         for v in kz_to_ru_lookup_variants(c_norm):
+            if len(v.split()) != word_count:
+                continue
             matches = self.gazetteer.settlements.get(v, [])
             if matches:
                 return matches
@@ -374,9 +377,20 @@ class AddressParserPipeline:
 
         for pat, c_name, p_name, def_dist in city_patterns:
             for m in pat.finditer(work):
-                # Не захватываем «Алматы» внутри «Алматы ауданы» (район в Астане/Актобе)
+                # Не захватываем «Алматы»/«Астана» внутри «Алматы ауданы», «район Астана», «мкр Астана», «Астана көшесі»
+                before_m = work[: m.start()].rstrip()
                 after_m = work[m.end() :].lstrip()
-                if re.match(r"^(?:район|р-н|ауданы|аудан|ауд\.?)\b", after_m, re.I):
+                if re.search(
+                    r"\b(?:район|р-н|ауданы|аудан|ауд\.?|мкр\.?|мкрн\.?|микрорайон|шағын\s+аудан(?:ы)?|шағынаудан(?:ы)?|ш/а|ықшам\s+аудан(?:ы)?|ул\.?|улица|пр\.?|проспект|жк|түк|бц|тц|трц)$",
+                    before_m,
+                    re.I,
+                ):
+                    continue
+                if re.match(
+                    r"^(?:район|р-н|ауданы|аудан|ауд\.?|микрорайон(?:ы)?|мкр\b|шағын|ықшам|көшесі|даңғылы|улица|проспект)\b",
+                    after_m,
+                    re.I,
+                ):
                     continue
                 if is_free(m.start(), m.end()):
                     if not city:
@@ -406,7 +420,17 @@ class AddressParserPipeline:
                         cand_city = span_str.raw_slice(m_s.start(1), m_s.end(1)).strip(" ,.")
                         if cand_city.lower() in _STREET_STOPWORDS:
                             continue
+                        city_end = m_s.end()
                         s_matches = self._lookup_settlement_candidates(cand_city)
+                        # Двусловный захват («Рудный Жамбыла», «Талдыкорган ул») — если его нет в КАТО,
+                        # берём только первое слово, чтобы не «съесть» улицу
+                        cand_words = work[m_s.start(1) : m_s.end(1)].split()
+                        if len(cand_words) == 2 and not s_matches:
+                            first_end = m_s.start(1) + len(cand_words[0])
+                            first_raw = span_str.raw_slice(m_s.start(1), first_end).strip(" ,.")
+                            first_matches = self._lookup_settlement_candidates(first_raw)
+                            if first_matches or s_pat is explicit_settle_patterns[0]:
+                                cand_city, s_matches, city_end = first_raw, first_matches, first_end
                         if s_matches:
                             chosen = s_matches[0]
                             if province:
@@ -423,39 +447,96 @@ class AddressParserPipeline:
                         else:
                             city = cand_city
                         city_in_text = True
-                        mark_occupied(m_s.start(), m_s.end())
+                        mark_occupied(m_s.start(), city_end)
                         break
                 if city:
                     break
 
-        # 2.4 Первый сегмент до запятой — проверка по справочнику КАТО (напр., «Тараз, ...», «Семей, ...», «Өскемен, ...»)
-        if not city and "," in work:
-            first_comma = work.find(",")
-            first_seg = work[:first_comma].strip()
-            after_comma = work[first_comma + 1 :].strip()
-            # Защита: если сразу после запятой идёт номер дома («Толе би, 286/4»), то первый сегмент — улица, а не село
-            next_is_house = bool(re.match(r"^(?:дом\b|д\.?\b|үй\b|уй\b|\d+\b)", after_comma, re.I))
-            if first_seg and not any(ch.isdigit() for ch in first_seg) and is_free(0, first_comma):
-                c_norm = normalize_lookup_key(first_seg)
-                s_matches = self._lookup_settlement_candidates(first_seg)
-                is_known_street = any(
-                    v in self.gazetteer.streets_by_norm for v in kz_to_ru_lookup_variants(c_norm)
-                )
-                if s_matches and not (next_is_house and is_known_street):
-                    chosen = s_matches[0]
-                    if province:
-                        for cand in s_matches:
-                            if cand[1] == province:
-                                chosen = cand
-                                break
-                    canon_c, canon_p, canon_d = chosen
-                    city = canon_c
-                    if not province:
-                        province = canon_p
-                    if not district and canon_d:
-                        district = canon_d
-                    city_in_text = True
-                    mark_occupied(0, first_comma + 1)
+        # 2.4 Населённый пункт из справочника КАТО в начале свободной части строки
+        # а) Сегмент до запятой («Тараз, ...», «Семей, ...», «Абайская область, Семей, ...»)
+        if not city:
+            free_start = next(
+                (i for i, ch in enumerate(work) if not occupied[i] and ch.isalnum()),
+                None,
+            )
+            if free_start is not None:
+                next_comma = work.find(",", free_start)
+                if next_comma != -1 and is_free(free_start, next_comma):
+                    first_seg = work[free_start:next_comma].strip()
+                    after_comma = work[next_comma + 1 :].strip()
+                    # Защита: если сразу после запятой идёт номер дома («Толе би, 286/4»), то это улица, а не село
+                    next_is_house = bool(
+                        re.match(r"^(?:дом\b|д\.?\b|үй\b|уй\b|\d+\b)", after_comma, re.I)
+                    )
+                    if first_seg and not any(ch.isdigit() for ch in first_seg):
+                        c_norm = normalize_lookup_key(first_seg)
+                        s_matches = self._lookup_settlement_candidates(first_seg)
+                        is_known_street = any(
+                            v in self.gazetteer.streets_by_norm
+                            for v in kz_to_ru_lookup_variants(c_norm)
+                        )
+                        if s_matches and not (next_is_house and is_known_street):
+                            chosen = s_matches[0]
+                            if province:
+                                for cand in s_matches:
+                                    if cand[1] == province:
+                                        chosen = cand
+                                        break
+                            canon_c, canon_p, canon_d = chosen
+                            city = canon_c
+                            if not province:
+                                province = canon_p
+                            if not district and canon_d:
+                                district = canon_d
+                            city_in_text = True
+                            mark_occupied(free_start, next_comma + 1)
+
+                # б) Город/село КАТО в начале свободной части без запятой после него
+                # («Усть-Каменогорск Азаттык 38/2», «Отеген батыр Макатаева, д 6», «Абайская область, Семей Бухар жырау 174»)
+                if not city:
+                    tail_free = work[free_start:]
+                    for n_words in (2, 1):
+                        m_w = re.match(
+                            r"^([А-Яа-яЁёӘәІіҢңҒғҮүҰұҚқӨөҺһ-]+"
+                            + (r"\s+[А-Яа-яЁёӘәІіҢңҒғҮүҰұҚқӨөҺһ-]+" if n_words == 2 else r"")
+                            + r")(?=\s)",
+                            tail_free,
+                        )
+                        if not m_w:
+                            continue
+                        cand_c = m_w.group(1)
+                        cand_end = free_start + m_w.end(1)
+                        if not is_free(free_start, cand_end):
+                            continue
+                        s_matches = self._lookup_settlement_candidates(cand_c)
+                        if not s_matches:
+                            continue
+                        rest = tail_free[m_w.end(1) :].lstrip()
+                        # После города не должно сразу идти число дома, тип улицы или вторая часть двусловной улицы
+                        if re.match(
+                            r"^(?:,?\s*(?:дом|д\.?|үй|уй|\d)|(?:улица|ул\.?|көшесі|кошеси|көше|проспект|пр-т|пр\.?|даңғылы|переулок|пер\.?|орамы|микрорайон|мкр|шағын|ықшам|квартал|бульвар|шоссе|район|р-н|ауданы|аудан|область|обл\.?|облысы|батыра|батыр|хана|хан|би|жырау|ел|дала)\b)",
+                            rest,
+                            re.I,
+                        ):
+                            continue
+                        # После города обязательно должно быть хотя бы одно буквенное слово (улица/мкр)
+                        if not re.search(r"[А-Яа-яЁёӘәІіҢңҒғҮүҰұҚқӨөҺһ]{3,}", rest):
+                            continue
+                        chosen = s_matches[0]
+                        if province:
+                            for cand in s_matches:
+                                if cand[1] == province:
+                                    chosen = cand
+                                    break
+                        canon_c, canon_p, canon_d = chosen
+                        city = canon_c
+                        if not province:
+                            province = canon_p
+                        if not district and canon_d:
+                            district = canon_d
+                        city_in_text = True
+                        mark_occupied(free_start, cand_end)
+                        break
 
         # 2.5 Явный район в строке («Турксибский район», «Есиль район», «Илийский р-н», «Сарыарқа ауданы», «Бостандық ауд.», «Қазыбек би ауданы»)
         # Важно: не путать с «шағын ауданы» / «ықшам ауданы» / «мөлтек ауданы» (это микрорайон!)
@@ -492,55 +573,115 @@ class AddressParserPipeline:
         # =====================================================================
         # ШАГ 3. Детерминированный разбор «Хвоста» (apartment, entrance, floor)
         # =====================================================================
+        _prev_prefix_marker_re = re.compile(
+            r"(?:дом|д\.?|үй|уй|уч\.?|участок|корпус|корп\.?|блок|стр\.?|"
+            r"кв\.?|квартира|пәтер|патер|пәт\.?|flat|kv|офис|оф\.?|каб\.?|кеңсе|"
+            r"подъезд|подьезд|п-д|под\.?|кіреберіс|киреберис|кір\.?|"
+            r"этаж|эт\.?|қабат|кабат|қаб\.?)\s*№?\s*$",
+            re.IGNORECASE,
+        )
+        _following_own_num_re = re.compile(
+            r"^\s*№?\s*(\d+[а-яa-z]?)\b"
+            r"(?!\s*(?:-\s*(?:ші|шы|ши|й|ой|ый)\s*)?"
+            r"(?:(?:подъезд|подьезд|п-д|под\.?|кіреберіс|киреберис|кір\.?|"
+            r"этаж|эт\.?|қабат|кабат|қаб\.?|"
+            r"кв\.?|квартира|пәтер|патер|пәт\.?|flat|kv|офис|оф\.?|каб\.?|кеңсе)\b"
+            r"(?!\s*№?\s*\d)))",
+            re.IGNORECASE,
+        )
+
+        def _valid_tail_match(m: re.Match, is_suffix_num_before_kw: bool) -> bool:
+            """Проверяет, что число не вырвано из дроби (38/2) и не украдено у соседнего маркера."""
+            if not is_free(m.start(), m.end()):
+                return False
+            num_s, num_e = m.start(1), m.end(1)
+            # Число не должно быть частью дроби («38/2», «8/2»)
+            if (num_s > 0 and work[num_s - 1] == "/") or (
+                num_e < len(work) and work[num_e : num_e + 1] == "/"
+            ):
+                return False
+            if is_suffix_num_before_kw:
+                # Перед числом не должен стоять префиксный маркер («д. 101 этаж 12», «кв 207 этаж 22», «корпус 1 подъезд 11»)
+                if _prev_prefix_marker_re.search(work[:num_s]):
+                    return False
+                # После самого ключевого слова не должно идти его собственное число («185 подъезд 9», «85 п-д 12»)
+                if _following_own_num_re.match(work[m.end() :]):
+                    return False
+            return True
+
         entrance_patterns = [
-            re.compile(
-                r"\b(\d+)(?:\s*-\s*(?:ші|шы|ши|й|ой|ый)?)?\s*(?:подъезд|подьезд|п-д|под\.?|кіреберіс|киреберис|кір\.?)(?=\b|\s|,|$)",
-                re.IGNORECASE,
+            (
+                re.compile(
+                    r"\b(\d+)(?:\s*-\s*(?:ші|шы|ши|й|ой|ый)?)?\s*(?:подъезд|подьезд|п-д|под\.?|кіреберіс|киреберис|кір\.?)(?=\b|\s|,|$)",
+                    re.IGNORECASE,
+                ),
+                True,
             ),
-            re.compile(
-                r"\b(?:подъезд|подьезд|п-д|под\.?|кіреберіс|киреберис|кір\.?)\s*№?\s*(\d+)\b",
-                re.IGNORECASE,
+            (
+                re.compile(
+                    r"\b(?:подъезд|подьезд|п-д|под\.?|кіреберіс|киреберис|кір\.?)\s*№?\s*(\d+)\b",
+                    re.IGNORECASE,
+                ),
+                False,
             ),
         ]
-        for pat in entrance_patterns:
-            m = pat.search(work)
-            if m and is_free(m.start(), m.end()):
-                entrance = m.group(1)
-                mark_occupied(m.start(), m.end())
+        for pat, is_suf in entrance_patterns:
+            for m in pat.finditer(work):
+                if _valid_tail_match(m, is_suf):
+                    entrance = m.group(1)
+                    mark_occupied(m.start(), m.end())
+                    break
+            if entrance:
                 break
 
         floor_patterns = [
-            re.compile(
-                r"\b(\d+)(?:\s*-\s*(?:ші|шы|ши|й|ой|ый)?)?\s*(?:этаж|эт\.?|қабат|кабат|қаб\.?)(?=\b|\s|,|$)",
-                re.IGNORECASE,
+            (
+                re.compile(
+                    r"\b(\d+)(?:\s*-\s*(?:ші|шы|ши|й|ой|ый)?)?\s*(?:этаж|эт\.?|қабат|кабат|қаб\.?)(?=\b|\s|,|$)",
+                    re.IGNORECASE,
+                ),
+                True,
             ),
-            re.compile(
-                r"\b(?:этаж|эт\.?|қабат|кабат|қаб\.?)\s*№?\s*(\d+)\b",
-                re.IGNORECASE,
+            (
+                re.compile(
+                    r"\b(?:этаж|эт\.?|қабат|кабат|қаб\.?)\s*№?\s*(\d+)\b",
+                    re.IGNORECASE,
+                ),
+                False,
             ),
         ]
-        for pat in floor_patterns:
-            m = pat.search(work)
-            if m and is_free(m.start(), m.end()):
-                floor = m.group(1)
-                mark_occupied(m.start(), m.end())
+        for pat, is_suf in floor_patterns:
+            for m in pat.finditer(work):
+                if _valid_tail_match(m, is_suf):
+                    floor = m.group(1)
+                    mark_occupied(m.start(), m.end())
+                    break
+            if floor:
                 break
 
         apt_patterns = [
-            re.compile(
-                r"\b(?:кв\.?|квартира|пәтер|патер|пәт\.?|flat|kv|офис|оф\.?|каб\.?|кеңсе)\s*№?\s*(\d+[а-яa-z]?)\b",
-                re.IGNORECASE,
+            (
+                re.compile(
+                    r"\b(?:кв\.?|квартира|пәтер|патер|пәт\.?|flat|kv|офис|оф\.?|каб\.?|кеңсе)\s*№?\s*(\d+[а-яa-z]?)\b",
+                    re.IGNORECASE,
+                ),
+                False,
             ),
-            re.compile(
-                r"\b(\d+[а-яa-z]?)(?:\s*-\s*(?:ші|шы|ши)?)?\s*(?:кв\.?|квартира|пәтер|патер|пәт\.?|flat|kv|кеңсе)(?=\b|\s|,|$)",
-                re.IGNORECASE,
+            (
+                re.compile(
+                    r"\b(\d+[а-яa-z]?)(?:\s*-\s*(?:ші|шы|ши)?)?\s*(?:кв\.?|квартира|пәтер|патер|пәт\.?|flat|kv|кеңсе)(?=\b|\s|,|$)",
+                    re.IGNORECASE,
+                ),
+                True,
             ),
         ]
-        for pat in apt_patterns:
-            m = pat.search(work)
-            if m and is_free(m.start(), m.end()):
-                apartment = m.group(1)
-                mark_occupied(m.start(), m.end())
+        for pat, is_suf in apt_patterns:
+            for m in pat.finditer(work):
+                if _valid_tail_match(m, is_suf):
+                    apartment = m.group(1)
+                    mark_occupied(m.start(), m.end())
+                    break
+            if apartment:
                 break
 
         # =====================================================================
@@ -789,7 +930,7 @@ class AddressParserPipeline:
         # 4.7 Беспрефиксная улица + номер дома («Туран 55/6», «Кулманова 133», «жуалы 19», «Астана, Сауран 3/1», «Толе би 286/4», «Бауыржан Момышұлы, 12 үй», «8 Марта 15»)
         if not street_name:
             bare_street_house_re = re.compile(
-                r"(?:^|,\s*)"
+                r"(?:^|,\s*|(?<=\s))"
                 r"((?:\d+\s+(?:марта|мая|лет\s+[А-Яа-яЁёӘәІіҢңҒғҮүҰұҚқӨөҺһ]+|жылдық\s+[А-Яа-яЁёӘәІіҢңҒғҮүҰұҚқӨөҺһ]+))"
                 r"|(?:[А-ЯЁӘІҢҒҮҰҚӨҺ]\.\s*[А-Яа-яЁёӘәІіҢңҒғҮүҰұҚқӨөҺһ-]+)"
                 r"|(?:[А-Яа-яЁёӘәІіҢңҒғҮүҰұҚқӨөҺһA-Za-z-]+(?:\s+(?!(?:дом|д|үй|уй|кв|квартира|пәтер|патер|подъезд|подьезд|кіреберіс|этаж|қабат)\b)[А-Яа-яЁёӘәІіҢңҒғҮүҰұҚқӨөҺһA-Za-z]{2,})?))\s*,?\s+"
@@ -797,20 +938,36 @@ class AddressParserPipeline:
                 r"(\d+(?:/\d+)?[а-яa-z]?(?:\s+(?:корпус|корп\.?|блок)\s+[0-9а-яa-z]+)?)(?:\s*-\s*(?:ші|шы|ши)?)?(?:\s*(?:дом|үй|уй))?\b",
                 re.IGNORECASE,
             )
-            for m_bare in bare_street_house_re.finditer(work):
-                if is_free(m_bare.start(1), m_bare.end()):
-                    cand_street = span_str.raw_slice(
-                        m_bare.start(1), m_bare.end(1)
-                    ).strip(" ,.")
-                    words_low = [w.lower().rstrip(".") for w in cand_street.split()]
-                    if any(w in _STREET_STOPWORDS or w in ("алматы", "астана", "шымкент") for w in words_low):
-                        continue
-                    street_name = cand_street
-                    house = span_str.raw_slice(
-                        m_bare.start(2), m_bare.end(2)
-                    ).strip(" ,.")
-                    mark_occupied(m_bare.start(1), m_bare.end())
+
+            def _segment_prefix_parsed(pos: int) -> bool:
+                """Всё, что стоит перед pos в текущем сегменте (до запятой), уже разобрано (город, область)."""
+                seg_start = work.rfind(",", 0, pos) + 1
+                return all(
+                    occupied[i] or not work[i].isalnum() for i in range(seg_start, pos)
+                )
+
+            search_pos = 0
+            while search_pos < len(work):
+                m_bare = bare_street_house_re.search(work, search_pos)
+                if not m_bare:
                     break
+                search_pos = m_bare.start(1) + 1
+                if not is_free(m_bare.start(1), m_bare.end()):
+                    continue
+                if not _segment_prefix_parsed(m_bare.start(1)):
+                    continue
+                cand_street = span_str.raw_slice(
+                    m_bare.start(1), m_bare.end(1)
+                ).strip(" ,.")
+                words_low = [w.lower().rstrip(".") for w in cand_street.split()]
+                if any(w in _STREET_STOPWORDS or w in ("алматы", "астана", "шымкент") for w in words_low):
+                    continue
+                street_name = cand_street
+                house = span_str.raw_slice(
+                    m_bare.start(2), m_bare.end(2)
+                ).strip(" ,.")
+                mark_occupied(m_bare.start(1), m_bare.end())
+                break
 
         # 4.8 Выделение номера дома (если улица уже найдена, а дом ещё нет), включая казахский маркер «үй» («15 үй», «15-үй», «15-ші үй», «үй 15») и корпуса
         if street_name and not house:
