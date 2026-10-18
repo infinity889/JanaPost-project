@@ -22,6 +22,8 @@ import {
 } from './utils/addressParser';
 
 const PAGE_SIZE = 50;
+const STORAGE_KEY_RECORDS = 'jana_post_records_cache';
+const STORAGE_KEY_METRICS = 'jana_post_metrics_cache';
 
 export function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('workspace');
@@ -32,7 +34,14 @@ export function App() {
   const [isTestingApi, setIsTestingApi] = useState<boolean>(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
-  const [records, setRecords] = useState<AddressRecordUI[]>([]);
+  const [records, setRecords] = useState<AddressRecordUI[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_RECORDS);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   // Table Filters, Search, Sorting & Pagination
@@ -41,14 +50,47 @@ export function App() {
   const [sortAsc, setSortAsc] = useState<boolean>(false);
   const [currentPage, setCurrentPage] = useState<number>(1);
 
-  const [metrics, setMetrics] = useState<BatchParseMetrics>({
-    totalRecords: 0,
-    durationMs: 0,
-    msPerRecord: 0,
-    projected1000Ms: 0,
-    source: 'api',
-    timestamp: new Date().toLocaleTimeString('ru-RU'),
+  const [metrics, setMetrics] = useState<BatchParseMetrics>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_METRICS);
+      if (saved) return JSON.parse(saved);
+    } catch {
+      // ignore
+    }
+    return {
+      totalRecords: 0,
+      durationMs: 0,
+      msPerRecord: 0,
+      projected1000Ms: 0,
+      source: 'api',
+      timestamp: new Date().toLocaleTimeString('ru-RU'),
+    };
   });
+
+  // Auto-save parsed records and metrics to localStorage so F5 doesn't lose data
+  React.useEffect(() => {
+    try {
+      if (records.length > 0) {
+        localStorage.setItem(STORAGE_KEY_RECORDS, JSON.stringify(records));
+      } else {
+        localStorage.removeItem(STORAGE_KEY_RECORDS);
+      }
+    } catch {
+      // Safe fallback if localStorage quota exceeded
+    }
+  }, [records]);
+
+  React.useEffect(() => {
+    try {
+      if (metrics.totalRecords > 0) {
+        localStorage.setItem(STORAGE_KEY_METRICS, JSON.stringify(metrics));
+      } else {
+        localStorage.removeItem(STORAGE_KEY_METRICS);
+      }
+    } catch {
+      // Safe fallback if localStorage quota exceeded
+    }
+  }, [metrics]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -282,6 +324,12 @@ export function App() {
 
   // 6. Clear loaded records
   const handleClearRecords = () => {
+    try {
+      localStorage.removeItem(STORAGE_KEY_RECORDS);
+      localStorage.removeItem(STORAGE_KEY_METRICS);
+    } catch {
+      // ignore
+    }
     setUploadError(null);
     setRecords([]);
     setSelectedId(null);
