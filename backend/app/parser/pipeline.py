@@ -586,13 +586,22 @@ class AddressParserPipeline:
         # =====================================================================
         # ШАГ 3. Детерминированный разбор «Хвоста» (apartment, entrance, floor)
         # =====================================================================
-        _prev_prefix_marker_re = re.compile(
-            r"(?:дом|д\.?|үй|уй|уч\.?|участок|корпус|корп\.?|блок|стр\.?|"
-            r"кв\.?|квартира|пәтер|патер|пәт\.?|flat|kv|офис|оф\.?|каб\.?|кеңсе|"
-            r"подъезд|подьезд|п-д|под\.?|кіреберіс|киреберис|кір\.?|"
-            r"этаж|эт\.?|қабат|кабат|қаб\.?)\s*№?\s*$",
-            re.IGNORECASE,
-        )
+        def _is_preceded_by_prefix_marker(text: str) -> bool:
+            m = re.search(
+                r"\b(?:дом|д\.?|үй|уй|уч\.?|участок|корпус|корп\.?|блок|стр\.?|"
+                r"кв\.?|квартира|пәтер|патер|пәт\.?|flat|kv|офис|оф\.?|каб\.?|кеңсе|"
+                r"подъезд|подьезд|п-д|под\.?|кіреберіс|киреберис|кір\.?|"
+                r"этаж|эт\.?|қабат|кабат|қаб\.?)\s*№?\s*$",
+                text,
+                re.IGNORECASE,
+            )
+            if not m:
+                return False
+            before_marker = text[: m.start()].rstrip()
+            if re.search(r"\d+$", before_marker):
+                return False
+            return True
+
         _following_own_num_re = re.compile(
             r"^\s*№?\s*(\d+[а-яa-z]?)\b"
             r"(?!\s*(?:-\s*(?:ші|шы|ши|й|ой|ый)\s*)?"
@@ -614,8 +623,8 @@ class AddressParserPipeline:
             ):
                 return False
             if is_suffix_num_before_kw:
-                # Перед числом не должен стоять префиксный маркер («д. 101 этаж 12», «кв 207 этаж 22», «корпус 1 подъезд 11»)
-                if _prev_prefix_marker_re.search(work[:num_s]):
+                # Перед числом не должен стоять незакрытый префиксный маркер («д. 101 этаж 12», «кв 207 этаж 22»)
+                if _is_preceded_by_prefix_marker(work[:num_s]):
                     return False
                 # После самого ключевого слова не должно идти его собственное число («185 подъезд 9», «85 п-д 12»)
                 if _following_own_num_re.match(work[m.end() :]):
