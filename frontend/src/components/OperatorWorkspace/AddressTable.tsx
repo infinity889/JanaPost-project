@@ -154,14 +154,14 @@ export const AddressTable: React.FC<AddressTableProps> = ({
             onClick={onToggleSort}
             title={
               sortAsc
-                ? 'Сортировка по точности: сначала сложные записи'
-                : 'Сортировка по точности: сначала точные записи'
+                ? 'Сортировка: сначала с низкой точностью (нажмите для сортировки по убыванию)'
+                : 'Сортировка: сначала с высокой точностью (нажмите для сортировки по возрастанию)'
             }
             className="h-8 px-3 rounded-md border border-slate-200 bg-white text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-50 inline-flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
           >
             <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
             <span className="hidden sm:inline">
-              {sortAsc ? 'Точность ↑' : 'Точность ↓'}
+              {sortAsc ? 'Точность: от низких' : 'Точность: от высоких'}
             </span>
           </button>
         </div>
@@ -179,8 +179,19 @@ export const AddressTable: React.FC<AddressTableProps> = ({
               <th className="py-2.5 px-3 w-36 font-medium">Локация</th>
               <th className="py-2.5 px-3 w-44 font-medium">Улица и дом</th>
               <th className="py-2.5 px-3 w-28 font-medium">Кв / Детали</th>
-              <th className="py-2.5 pl-2 pr-5 w-24 text-right font-medium">
-                Точность
+              <th
+                onClick={onToggleSort}
+                title={
+                  sortAsc
+                    ? 'Сортировка: сначала с низкой точностью (нажмите для сортировки по убыванию)'
+                    : 'Сортировка: сначала с высокой точностью (нажмите для сортировки по возрастанию)'
+                }
+                className="py-2.5 pl-2 pr-5 w-28 text-right font-medium cursor-pointer hover:text-slate-900 transition-colors select-none"
+              >
+                <div className="inline-flex items-center gap-1 justify-end">
+                  <span>Точность</span>
+                  <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                </div>
               </th>
             </tr>
           </thead>

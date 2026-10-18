@@ -38,7 +38,7 @@ export function App() {
   // Table Filters, Search, Sorting & Pagination
   const [activeFilter, setActiveFilter] = useState<TableFilterTab>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [sortAsc, setSortAsc] = useState<boolean>(true);
+  const [sortAsc, setSortAsc] = useState<boolean>(false);
   const [currentPage, setCurrentPage] = useState<number>(1);
 
   const [metrics, setMetrics] = useState<BatchParseMetrics>({
@@ -269,7 +269,7 @@ export function App() {
       setRecords(resultRecords);
       setMetrics(batchMetrics);
       setApiOnline(online);
-      setSelectedId(resultRecords[0]?.id ?? null);
+      setSelectedId(null);
       setCurrentPage(1);
       setActiveFilter('all');
       setSearchQuery('');
